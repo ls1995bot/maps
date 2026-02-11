@@ -3,203 +3,117 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ค้นหาสินค้า - แหลมฉบังเครื่องเขียน (1995)</title>
-    
+    <title>แหลมฉบังเครื่องเขียน - Smart Guide</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
     <style>
-        /* สไตล์การจัดวางหน้าจอ */
         body { margin: 0; padding: 0; font-family: 'Sarabun', sans-serif; background: #f4f4f4; overflow: hidden; }
-        
-        /* ช่องค้นหาด้านบน */
         #search-container {
             position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
             width: 92%; max-width: 500px; z-index: 1000; display: flex; gap: 8px;
         }
-        
-        input { 
-            flex: 1; padding: 14px 22px; border-radius: 30px; border: none; 
-            box-shadow: 0 4px 20px rgba(0,0,0,0.25); font-size: 16px; outline: none; 
-        }
-        
-        button#clear-btn { 
-            padding: 0 16px; border-radius: 50%; border: none; 
-            background: #ff4757; color: white; font-weight: bold; cursor: pointer; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.15); display: none;
-        }
+        input { flex: 1; padding: 14px 22px; border-radius: 30px; border: none; box-shadow: 0 4px 20px rgba(0,0,0,0.25); font-size: 16px; outline: none; }
+        button#clear-btn { padding: 0 16px; border-radius: 50%; border: none; background: #ff4757; color: white; cursor: pointer; display: none; }
 
         #map { width: 100vw; height: 100vh; background: #e0e0e0; }
 
-        /* สไตล์หน้าต่างข้อมูล (Pop-up) ที่เด้งขึ้นมา */
+        /* Popup & Animation */
         .leaflet-popup-content-wrapper { border-radius: 12px; padding: 0; overflow: hidden; }
-        .leaflet-popup-content { margin: 0; width: 280px !important; max-height: 500px; overflow-y: auto; }
-        
-        .popup-header { 
-            background: #007bff; color: white; padding: 12px; 
-            text-align: center; font-weight: bold; font-size: 16px;
-            position: sticky; top: 0; z-index: 10; 
-        }
-        
-        .popup-img-box { 
-            width: 100%; height: 180px; background: #eee; 
-            display: flex; align-items: center; justify-content: center; overflow: hidden;
-        }
+        .popup-header { background: #007bff; color: white; padding: 12px; text-align: center; font-weight: bold; }
+        .popup-img-box { width: 100%; height: 180px; background: #eee; overflow: hidden; }
         .popup-img { width: 100%; height: 100%; object-fit: cover; }
         
-        .product-list-info { padding: 10px; background: #f9f9f9; font-size: 12px; color: #666; border-bottom: 1px solid #eee; }
-        
-        .product-list { list-style: none; padding: 0; margin: 0; }
-        .product-item { 
-            padding: 12px 15px; border-bottom: 1px solid #eee; 
-            font-size: 14px; color: #333; display: flex; align-items: center; gap: 10px; 
-        }
-        .product-item:last-child { border-bottom: none; }
-        .product-item .icon { font-size: 16px; opacity: 0.6; }
-
-        /* แอนิเมชันกรอบสีแดงกระพริบที่ตู้ */
-        .flashing-rect path {
-            fill: #ff0000; fill-opacity: 0.2;
-            stroke: #ff0000; stroke-width: 4;
-            animation: pulse 1s infinite alternate;
-        }
-        @keyframes pulse {
-            from { stroke-width: 2; fill-opacity: 0.1; }
-            to { stroke-width: 8; fill-opacity: 0.5; }
-        }
+        .flashing-rect path { fill: #ff0000; fill-opacity: 0.2; stroke: #ff0000; stroke-width: 4; animation: pulse 1s infinite alternate; }
+        @keyframes pulse { from { stroke-width: 2; fill-opacity: 0.1; } to { stroke-width: 8; fill-opacity: 0.5; } }
     </style>
 </head>
 <body>
 
     <div id="search-container">
-        <input type="text" id="search-input" placeholder="ค้นหาสินค้า (กาว, แฟ้ม, A4)..." onkeyup="handleSearch()">
+        <input type="text" id="search-input" placeholder="ค้นหาอะไรดี? (เช่น แม็ก, เทป, A4)..." onkeyup="handleSearch()">
         <button id="clear-btn" onclick="resetMap()">✕</button>
     </div>
 
     <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
     <script src="zones.js"></script>
+    <script src="dictionary.js"></script>
     <script src="products.js"></script>
 
     <script>
-        // --- 1. ตั้งค่าพื้นฐานแผนที่ (ขนาดตามรูป maps.png) ---
-        const MAP_W = 8127; 
-        const MAP_H = 9127; 
-        const IMAGE_URL = 'maps.png'; 
-
-        const map = L.map('map', {
-            crs: L.CRS.Simple,
-            minZoom: -3,
-            maxZoom: 1,
-            zoomControl: false
-        });
+        const MAP_W = 8127; const MAP_H = 9127; const IMAGE_URL = 'maps.png'; 
         
+        // จุดเริ่มต้น "You Are Here" (เสาใกล้ A-Event 5)
+        const START_POS = [2250, 2100]; 
+
+        const map = L.map('map', { crs: L.CRS.Simple, minZoom: -3, maxZoom: 1, zoomControl: false });
         const bounds = [[0, 0], [MAP_H, MAP_W]];
         L.imageOverlay(IMAGE_URL, bounds).addTo(map);
         map.fitBounds(bounds);
-        
-        // ปุ่มซูมอยู่ขวาล่าง
         L.control.zoom({ position: 'bottomright' }).addTo(map);
 
         let activeLayer = L.layerGroup().addTo(map);
+        let pathLayer = L.layerGroup().addTo(map);
 
-        // --- 2. ฟังก์ชันค้นหาสินค้า (รองรับหลายตำแหน่ง) ---
+        // วาดจุด You Are Here ถาวร
+        L.circleMarker(START_POS, { color: '#007bff', fillOpacity: 1, radius: 8 }).addTo(map).bindTooltip("คุณอยู่ที่นี่", { permanent: true, direction: 'top' });
+
         function handleSearch() {
             const keyword = document.getElementById('search-input').value.toLowerCase().trim();
             const clearBtn = document.getElementById('clear-btn');
-            
-            // ล้างข้อมูลเก่าบนหน้าจอ
             activeLayer.clearLayers();
-            
-            if (keyword.length < 2) {
-                clearBtn.style.display = 'none';
-                return;
-            }
+            pathLayer.clearLayers();
+
+            if (keyword.length < 2) { clearBtn.style.display = 'none'; return; }
             clearBtn.style.display = 'block';
 
-            // แยกคำค้นหา เช่น "ปากกา ม้า"
-            const searchTerms = keyword.split(' ').filter(t => t.length > 0);
+            // 1. หาว่า keyword ตรงกับคำไหนใน Dictionary
+            const matchedGroups = dictionary.filter(d => 
+                d.canonical.toLowerCase().includes(keyword) || 
+                d.aliases.some(a => a.toLowerCase().includes(keyword))
+            ).map(d => d.canonical);
 
-            // กรองสินค้าที่ตรงกับคำค้นหา
-            const foundProducts = products.filter(p => {
-                const zonesText = (p.zone || "") + " " + (p.zone2 || "") + " " + (p.zone3 || "");
-                const productData = (p.name + " " + (p.keywords || "") + " " + p.id + " " + zonesText).toLowerCase();
-                return searchTerms.every(term => productData.includes(term));
-            });
+            // 2. ค้นหาโซนจากชื่อกลุ่มที่เจอ
+            const results = products.filter(p => matchedGroups.includes(p.canonical));
 
-            if (foundProducts.length === 0) return;
+            if (results.length === 0) return;
 
-            // จัดกลุ่มสินค้าตามตู้ (ดึงพิกัดจาก zoneConfig ใน zones.js)
-            const groups = {};
-            foundProducts.forEach(p => {
-                // ตรวจสอบทั้ง 3 โซนที่เป็นไปได้
+            const boundsList = [];
+            results.forEach(p => {
                 const targetZones = [p.zone, p.zone2, p.zone3].filter(z => z);
-
                 targetZones.forEach(zoneName => {
                     const config = zoneConfig[zoneName];
                     if (config) {
-                        if (!groups[zoneName]) {
-                            groups[zoneName] = { 
-                                bounds: config.bounds, 
-                                zoneName: zoneName, 
-                                items: [], 
-                                shelfImage: config.image 
-                            };
-                        }
-                        // ป้องกันชื่อซ้ำ
-                        if (!groups[zoneName].items.includes(p.name)) {
-                            groups[zoneName].items.push(p.name);
-                        }
+                        // วาดสี่เหลี่ยม
+                        const rect = L.rectangle(config.bounds, { className: 'flashing-rect', color: 'red', weight: 1 }).addTo(activeLayer);
+                        
+                        // วาดเส้นนำทาง (Magic Path)
+                        const targetCenter = [
+                            (config.bounds[0][0] + config.bounds[1][0]) / 2,
+                            (config.bounds[0][1] + config.bounds[1][1]) / 2
+                        ];
+                        L.polyline([START_POS, targetCenter], { color: 'blue', weight: 3, dashArray: '10, 10', opacity: 0.6 }).addTo(pathLayer);
+
+                        let popupHtml = `<div class="popup-header">${zoneName}</div>`;
+                        if (config.image) popupHtml += `<div class="popup-img-box"><img src="${config.image}" class="popup-img"></div>`;
+                        popupHtml += `<div style="padding:15px; text-align:center;"><b>กลุ่มสินค้า: ${p.canonical}</b><br><small>เดินตามเส้นประสีฟ้ามาได้เลย!</small></div>`;
+                        
+                        rect.bindPopup(popupHtml);
+                        boundsList.push(config.bounds);
                     }
                 });
             });
 
-            const boundsList = [];
-            Object.values(groups).forEach(g => {
-                // วาดกรอบสี่เหลี่ยมกระพริบ
-                const rect = L.rectangle(g.bounds, { 
-                    className: 'flashing-rect', 
-                    color: 'red', 
-                    weight: 1 
-                }).addTo(activeLayer);
-
-                // สร้างเนื้อหาในหน้าต่าง Pop-up
-                let popupHtml = `<div class="popup-header">${g.zoneName}</div>`;
-                
-                if (g.shelfImage) {
-                    popupHtml += `<div class="popup-img-box"><img src="${g.shelfImage}" class="popup-img"></div>`;
-                }
-
-                popupHtml += `<div class="product-list-info">พบ ${g.items.length} รายการ:</div>`;
-                popupHtml += `<ul class="product-list">`;
-                g.items.forEach(name => {
-                    popupHtml += `<li class="product-item"><span class="icon">📦</span> <span>${name}</span></li>`;
-                });
-                popupHtml += `</ul>`;
-
-                rect.bindPopup(popupHtml);
-                boundsList.push(g.bounds);
-            });
-
-            // ซูมไปหาตู้ที่เจอ
             if (boundsList.length > 0) {
-                const groupBounds = L.latLngBounds(boundsList);
-                map.fitBounds(groupBounds.pad(0.4));
-                
-                // ถ้าเจอจุดเดียว ให้เปิดหน้าต่างข้อมูลทันที
-                activeLayer.eachLayer(layer => {
-                    if (layer instanceof L.Rectangle && Object.keys(groups).length === 1) {
-                        layer.openPopup();
-                    }
-                });
+                map.fitBounds(L.latLngBounds(boundsList).pad(0.5));
+                if (results.length === 1) activeLayer.getLayers()[0].openPopup();
             }
         }
 
-        // --- 3. ฟังก์ชันรีเซ็ตค่า ---
         function resetMap() {
             document.getElementById('search-input').value = '';
             activeLayer.clearLayers();
+            pathLayer.clearLayers();
             map.fitBounds(bounds);
             document.getElementById('clear-btn').style.display = 'none';
         }
